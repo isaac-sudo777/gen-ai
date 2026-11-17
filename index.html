@@ -474,7 +474,7 @@
       fast: {
         name: "Gen 1.0 FAST",
         description: "SmolLM2 · 360M params · quick local text generation",
-        model: "onnx-community/SmolLM2-360M-Instruct",
+        model: "onnx-community/SmolLM2-360M-ONNX",
         systemPrompt: "You are Gen AI, a browser-local text model. Write clear answers in plain language. Do not claim to browse the web or do research. Keep replies concise and helpful.",
         maxTokens: 160,
         temperature: 0.82,
@@ -504,6 +504,7 @@
 
     let generator = null;
     let loadedModelKey = null;
+    let loadedDevice = null;
     let conversation = [];
     let busy = false;
 
@@ -569,58 +570,86 @@
       }
     }
 
-    async function loadModel(key) {
-      if (generator && loadedModelKey === key) {
+    async function loadModel(key, preferGPU = true) {
+      if (generator && loadedModelKey === key && (preferGPU || loadedDevice === "wasm")) {
         return generator;
       }
 
       const selected = modelMap[key];
+      generator = null;
+      loadedModelKey = null;
+      loadedDevice = null;
       setStatus(`Loading ${selected.name}…`, "warn");
       sendButton.disabled = true;
       hint.textContent = "Downloading model files to your browser. This can take a little while on the first run.";
 
       try {
-        try {
-          generator = await pipeline("text-generation", selected.model, {
-            device: "webgpu",
-            dtype: "q4",
-          });
-          setStatus("Model ready · WebGPU", "ok");
-          gpuInfo.textContent = "WebGPU active. FAST is designed for low-power devices; Thinking does a bit more work per answer.";
-        } catch (gpuErr) {
-          console.warn("WebGPU failed, falling back to WASM:", gpuErr);
+        if (preferGPU) {
+          try {
+            generator = await pipeline("text-generation", selected.model, {
+              device: "webgpu",
+              dtype: "q4",
+            });
+            loadedDevice = "webgpu";
+            setStatus("Model ready · WebGPU", "ok");
+            gpuInfo.textContent = "WebGPU active. FAST is designed for low-power devices; Thinking does a bit more work per answer.";
+          } catch (gpuErr) {
+            console.warn("WebGPU model load failed; trying WASM:", gpuErr);
+            setStatus("Trying CPU fallback…", "warn");
+          }
+        }
+
+        if (!generator) {
           generator = await pipeline("text-generation", selected.model, {
             device: "wasm",
             dtype: "q4",
           });
+          loadedDevice = "wasm";
           setStatus("Model ready · CPU fallback", "warn");
-          gpuInfo.textContent = "WebGPU is unavailable here. The site is using CPU inference instead, which is slower but still local.";
+          gpuInfo.textContent = "Using CPU inference. Replies may be slower, but the model still runs locally.";
         }
 
         loadedModelKey = key;
         return generator;
+      } catch (error) {
+        generator = null;
+        loadedModelKey = null;
+        loadedDevice = null;
+        throw error;
       } finally {
         sendButton.disabled = false;
         hint.textContent = "Press Enter to send · Shift + Enter for a new line · First run downloads the model";
       }
     }
 
-    async function getReply(prompt, key) {
-      const selected = modelMap[key];
-      const pipe = await loadModel(key);
-
-      const messages = [{ role: "system", content: selected.systemPrompt }, ...conversation, { role: "user", content: prompt }];
-      const out = await pipe(messages, {
+    async function runGeneration(pipe, selected, messages) {
+      return pipe(messages, {
         max_new_tokens: selected.maxTokens,
         temperature: selected.temperature,
         top_p: 0.9,
         do_sample: true,
         repetition_penalty: 1.08,
       });
+    }
+
+    async function getReply(key) {
+      const selected = modelMap[key];
+      const messages = [{ role: "system", content: selected.systemPrompt }, ...conversation];
+      let pipe = await loadModel(key);
+      let out;
+
+      try {
+        out = await runGeneration(pipe, selected, messages);
+      } catch (gpuError) {
+        if (loadedDevice !== "webgpu") throw gpuError;
+        console.warn("WebGPU generation failed; retrying with WASM:", gpuError);
+        pipe = await loadModel(key, false);
+        out = await runGeneration(pipe, selected, messages);
+      }
 
       const text = out?.[0]?.generated_text;
       if (!text) {
-        return "I could not generate a reply. Please try again.";
+        throw new Error("The model returned an empty response.");
       }
 
       if (Array.isArray(text)) {
@@ -628,11 +657,6 @@
       }
 
       if (typeof text === "string") {
-        const marker = "assistant";
-        const idx = text.lastIndexOf(marker);
-        if (idx !== -1) {
-          return text.slice(idx + marker.length).trim() || "I could not generate a reply.";
-        }
         return text.trim();
       }
 
@@ -651,6 +675,7 @@
       resetConversation();
       generator = null;
       loadedModelKey = null;
+      loadedDevice = null;
     });
 
     form.addEventListener("submit", async (event) => {
@@ -664,18 +689,20 @@
 
       addMessage("user", raw);
       conversation.push({ role: "user", content: raw });
-
-      const assistantBubble = addMessage("assistant", "Generating…");
+      const assistantBubble = addMessage("assistant", "Loading model and generating…");
 
       try {
         const key = modelSelect.value;
-        const reply = await getReply(raw, key);
+        const reply = await getReply(key);
         assistantBubble.textContent = reply;
         conversation.push({ role: "assistant", content: reply });
       } catch (error) {
-        console.error(error);
-        assistantBubble.textContent = "The model could not generate a response on this browser/device. Try FAST mode, reload the page, or use a newer browser.";
+        console.error("Gen AI inference failed:", error);
+        const detail = error instanceof Error ? error.message : String(error);
+        assistantBubble.textContent = `The model failed to load or generate. Details: ${detail.slice(0, 260)}. Check your connection, then reload and try FAST mode.`;
         assistantBubble.classList.add("error");
+        setStatus("Model failed · see reply details", "bad");
+        conversation.pop();
       } finally {
         busy = false;
         sendButton.disabled = false;
