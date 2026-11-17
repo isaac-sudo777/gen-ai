@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="description" content="Gen AI is a free, browser-local, no-account AI chat app for text generation using WebGPU and WebAssembly. Ships as an open-source static site for GitHub Pages." />
+  <title>Gen AI — Browser Local Chat</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --bg-2: #10151d;
+      --panel: #141a22;
+      --panel-2: #1a212c;
+      --line: #2b3340;
+      --text: #edf1f7;
+      --muted: #9aa5b5;
+      --green: #c9f76b;
+      --green-dark: #1d2514;
+      --amber: #f7c56c;
+      --red: #ff9a9a;
+      --glow: rgba(201, 247, 107, 0.28);
+      --shadow: rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #16202c 0%, var(--bg) 42%);
+      color: var(--text);
+      font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    button, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .app {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      background: rgba(17, 20, 27, 0.95);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 22px 18px;
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      font-size: 1.25rem;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--green), #d9f99d);
+      color: #111812;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      box-shadow: 0 12px 30px var(--glow);
+    }
+
+    .sidebar-block {
+      background: rgba(22, 28, 35, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 12px;
+    }
+
+    .label {
+      display: block;
+      margin: 0 0 9px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-size: 0.65rem;
+      font-weight: 800;
+    }
+
+    select, textarea {
+      width: 100%;
+      background: rgba(20, 26, 34, 0.9);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 13px;
+      outline: none;
+      transition: border-color 0.16s ease;
+    }
+
+    select:focus, textarea:focus {
+      border-color: rgba(201, 247, 107, 0.75);
+      box-shadow: 0 0 0 3px rgba(201, 247, 107, 0.08);
+    }
+
+    .model-card {
+      margin-top: 10px;
+      padding: 12px 10px;
+      border-radius: 12px;
+      background: rgba(17, 23, 31, 0.9);
+      border: 1px solid var(--line);
+    }
+
+    .model-card strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 5px;
+    }
+
+    .model-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.76rem;
+    }
+
+    .status-wrap {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+      background: var(--muted);
+      box-shadow: 0 0 0 rgba(0,0,0,0);
+    }
+
+    .dot.ok { background: var(--green); box-shadow: 0 0 10px rgba(201, 247, 107, 0.7); }
+    .dot.warn { background: var(--amber); }
+    .dot.bad { background: var(--red); }
+
+    .small {
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 0.78rem;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 80px;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(14, 17, 22, 0.72);
+      backdrop-filter: blur(12px);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: clamp(1rem, 2vw, 1.3rem);
+      letter-spacing: -0.03em;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+
+    .chat-shell {
+      width: min(920px, 100%);
+      margin: 0 auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      width: min(920px, calc(100% - 18px));
+      padding: 24px 12px 4px;
+    }
+
+    .welcome {
+      padding: 12vh 10px 18px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .welcome-mark {
+      font-size: clamp(2rem, 4vw, 3rem);
+      color: var(--green);
+      margin-bottom: 10px;
+      text-shadow: 0 0 18px rgba(201, 247, 107, 0.3);
+    }
+
+    .welcome h2 {
+      margin: 0 0 10px;
+      color: var(--text);
+      font-size: clamp(2rem, 4.5vw, 3rem);
+      letter-spacing: -0.05em;
+    }
+
+    .welcome p {
+      max-width: 560px;
+      margin: 0 auto;
+      line-height: 1.62;
+      font-size: 0.98rem;
+    }
+
+    .messages {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      overflow: auto;
+      padding-bottom: 10px;
+    }
+
+    .message-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .message-row.user {
+      justify-content: flex-end;
+    }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--line);
+      color: var(--green);
+      font-weight: 900;
+      font-size: 0.72rem;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .bubble {
+      max-width: min(720px, 86%);
+      padding: 14px 16px;
+      border-radius: 16px 16px 16px 6px;
+      border: 1px solid var(--line);
+      background: rgba(20, 23, 30, 0.92);
+      line-height: 1.7;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .message-row.user .bubble {
+      background: rgba(32, 42, 27, 0.95);
+      border-color: rgba(201, 247, 107, 0.35);
+      border-radius: 16px 16px 6px 16px;
+    }
+
+    .composer-wrap {
+      position: sticky;
+      bottom: 0;
+      background: linear-gradient(to top, rgba(11, 13, 18, 1) 28%, rgba(11, 13, 18, 0.92) 52%, rgba(11, 13, 18, 0.18) 100%);
+      padding: 0 0 20px;
+    }
+
+    .composer {
+      width: min(920px, 100%);
+      margin: 0 auto;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: rgba(20, 27, 35, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 10px 12px;
+      box-shadow: 0 18px 38px rgba(0,0,0,0.28);
+    }
+
+    textarea {
+      min-height: 48px;
+      max-height: 200px;
+      resize: vertical;
+      padding: 13px 10px;
+      border: 1px solid transparent;
+      background: transparent;
+    }
+
+    .send {
+      width: 48px;
+      height: 48px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--green), #d1ff8d);
+      color: #131910;
+      font-size: 1.35rem;
+      font-weight: 900;
+      flex-shrink: 0;
+      box-shadow: 0 10px 24px rgba(201, 247, 107, 0.2);
+    }
+
+    .send:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .hint {
+      width: min(920px, 100%);
+      margin: 8px auto 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.72rem;
+      padding: 0 10px;
+    }
+
+    .error {
+      color: var(--red);
+    }
+
+    details {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      line-height: 1.6;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        padding: 16px 14px;
+      }
+
+      .open-source-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .chat-shell {
+        width: min(100%, calc(100% - 18px));
+        padding-top: 16px;
+      }
+
+      .welcome {
+        padding-top: 8vh;
+      }
+
+      .bubble {
+        max-width: 90%;
+      }
+
+      header {
+        padding: 12px 16px;
+      }
+
+      .meta {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">G</div>
+        <span>Gen AI</span>
+      </div>
+
+      <div class="sidebar-block">
+        <label class="label" for="modelSelect">Select model</label>
+        <select id="modelSelect" aria-label="Select AI model">
+          <option value="fast">Gen 1.0 FAST</option>
+          <option value="thinking">Gen 1.0 Thinking</option>
+        </select>
+
+        <div class="model-card">
+          <strong id="modelName">Gen 1.0 FAST</strong>
+          <p id="modelDescription">SmolLM2 · 360M params · quick local text generation</p>
+        </div>
+      </div>
+
+      <div class="sidebar-block">
+        <div class="status-wrap">
+          <span id="statusDot" class="dot"></span>
+          <span id="statusText">Checking browser</span>
+        </div>
+        <div id="gpuInfo" class="small">This app checks WebGPU and falls back to CPU if needed.</div>
+        <details>
+          <summary>Browser support</summary>
+          <div class="small" style="margin-top: 8px;">
+            Best support: Chrome, Edge, and recent Safari. Firefox support depends on OS and GPU. This site uses HTTPS, and the browser must allow WebGPU. If no WebGPU is available, CPU fallback is used.
+          </div>
+        </details>
+      </div>
+
+      <div class="sidebar-block">
+        <div class="small" style="line-height: 1.7;">
+          <strong style="color: var(--text);">Local-only</strong><br />
+          No account. No backend. No chat history server. No web research. This is a private text model that predicts the next tokens in a browser.
+        </div>
+      </div>
+
+      <div class="sidebar-block">
+        <div class="small">
+          <strong style="color: var(--text);">GPU estimate</strong><br />
+          FAST: low to moderate GPU use, best on phones and low-power devices.<br />
+          Thinking: moderate GPU use, better on desktop or newer mobile hardware.
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header>
+        <h1>Private AI chat in your browser</h1>
+        <span class="meta">No sign-up · Open source · Local</span>
+      </header>
+
+      <div class="chat-shell">
+        <div id="welcome" class="welcome">
+          <div class="welcome-mark">✦</div>
+          <h2>Ask Gen AI anything</h2>
+          <p>Gen AI is a local browser-only text model. It generates text without searching the web or requiring an account. Choose FAST for speed or Thinking for more deliberate responses.</p>
+        </div>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+      </div>
+
+      <div class="composer-wrap">
+        <form id="chatForm" class="composer">
+          <textarea id="prompt" rows="1" placeholder="Message Gen AI…" aria-label="Message Gen AI"></textarea>
+          <button class="send" id="sendButton" type="submit" aria-label="Send message">↑</button>
+        </form>
+        <div id="hint" class="hint">Press Enter to send · Shift + Enter for a new line · First run downloads model files</div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
+
+    env.useBrowserCache = true;
+    env.allowRemoteModels = true;
+    env.allowLocalModels = false;
+
+    const modelMap = {
+      fast: {
+        name: "Gen 1.0 FAST",
+        description: "SmolLM2 · 360M params · quick local text generation",
+        model: "onnx-community/SmolLM2-360M-Instruct",
+        systemPrompt: "You are Gen AI, a browser-local text model. Write clear answers in plain language. Do not claim to browse the web or do research. Keep replies concise and helpful.",
+        maxTokens: 160,
+        temperature: 0.82,
+      },
+      thinking: {
+        name: "Gen 1.0 Thinking",
+        description: "Qwen 2.5 · 0.5B params · more deliberate responses",
+        model: "onnx-community/Qwen2.5-0.5B-Instruct",
+        systemPrompt: "You are Gen AI, a browser-local text model. Think before answering. Produce practical, concise text. Do not claim to research or browse the internet.",
+        maxTokens: 220,
+        temperature: 0.72,
+      }
+    };
+
+    const modelSelect = document.getElementById("modelSelect");
+    const modelName = document.getElementById("modelName");
+    const modelDescription = document.getElementById("modelDescription");
+    const promptField = document.getElementById("prompt");
+    const form = document.getElementById("chatForm");
+    const sendButton = document.getElementById("sendButton");
+    const statusText = document.getElementById("statusText");
+    const statusDot = document.getElementById("statusDot");
+    const gpuInfo = document.getElementById("gpuInfo");
+    const messagesEl = document.getElementById("messages");
+    const welcome = document.getElementById("welcome");
+    const hint = document.getElementById("hint");
+
+    let generator = null;
+    let loadedModelKey = null;
+    let conversation = [];
+    let busy = false;
+
+    function setStatus(text, kind = "warn") {
+      statusText.textContent = text;
+      statusDot.className = `dot ${kind}`;
+    }
+
+    function setModelMeta(key) {
+      const current = modelMap[key];
+      modelName.textContent = current.name;
+      modelDescription.textContent = current.description;
+    }
+
+    function addMessage(role, text) {
+      welcome.style.display = "none";
+
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
+
+      if (role === "assistant") {
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.textContent = "G";
+        row.appendChild(avatar);
+      }
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.textContent = text;
+      row.appendChild(bubble);
+
+      messagesEl.appendChild(row);
+      row.scrollIntoView({ behavior: "smooth", block: "end" });
+      return bubble;
+    }
+
+    async function checkBrowserSupport() {
+      if (!window.isSecureContext) {
+        setStatus("HTTPS required for WebGPU", "warn");
+        gpuInfo.textContent = "GitHub Pages uses HTTPS, so this app can run there. If you test locally, use localhost or https.";
+        return false;
+      }
+
+      if (!navigator.gpu) {
+        setStatus("WebGPU unavailable", "warn");
+        gpuInfo.textContent = "No WebGPU support detected. The app will try CPU fallback and may be slower on some devices.";
+        return false;
+      }
+
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          throw new Error("No adapter");
+        }
+        setStatus("WebGPU available", "ok");
+        gpuInfo.textContent = "GPU acceleration is available. FAST is optimized for low-power devices; Thinking is better on newer hardware.";
+        return true;
+      } catch (error) {
+        setStatus("GPU not available", "warn");
+        gpuInfo.textContent = "WebGPU is not usable in this browser/device. The app will try CPU inference instead.";
+        return false;
+      }
+    }
+
+    async function loadModel(key) {
+      if (generator && loadedModelKey === key) {
+        return generator;
+      }
+
+      const selected = modelMap[key];
+      setStatus(`Loading ${selected.name}…`, "warn");
+      sendButton.disabled = true;
+      hint.textContent = "Downloading model files to your browser. This can take a little while on the first run.";
+
+      try {
+        try {
+          generator = await pipeline("text-generation", selected.model, {
+            device: "webgpu",
+            dtype: "q4",
+          });
+          setStatus("Model ready · WebGPU", "ok");
+          gpuInfo.textContent = "WebGPU active. FAST is designed for low-power devices; Thinking does a bit more work per answer.";
+        } catch (gpuErr) {
+          console.warn("WebGPU failed, falling back to WASM:", gpuErr);
+          generator = await pipeline("text-generation", selected.model, {
+            device: "wasm",
+            dtype: "q4",
+          });
+          setStatus("Model ready · CPU fallback", "warn");
+          gpuInfo.textContent = "WebGPU is unavailable here. The site is using CPU inference instead, which is slower but still local.";
+        }
+
+        loadedModelKey = key;
+        return generator;
+      } finally {
+        sendButton.disabled = false;
+        hint.textContent = "Press Enter to send · Shift + Enter for a new line · First run downloads the model";
+      }
+    }
+
+    async function getReply(prompt, key) {
+      const selected = modelMap[key];
+      const pipe = await loadModel(key);
+
+      const messages = [{ role: "system", content: selected.systemPrompt }, ...conversation, { role: "user", content: prompt }];
+      const out = await pipe(messages, {
+        max_new_tokens: selected.maxTokens,
+        temperature: selected.temperature,
+        top_p: 0.9,
+        do_sample: true,
+        repetition_penalty: 1.08,
+      });
+
+      const text = out?.[0]?.generated_text;
+      if (!text) {
+        return "I could not generate a reply. Please try again.";
+      }
+
+      if (Array.isArray(text)) {
+        return text.filter((item) => item.role === "assistant").at(-1)?.content || "I could not generate a reply.";
+      }
+
+      if (typeof text === "string") {
+        const marker = "assistant";
+        const idx = text.lastIndexOf(marker);
+        if (idx !== -1) {
+          return text.slice(idx + marker.length).trim() || "I could not generate a reply.";
+        }
+        return text.trim();
+      }
+
+      return JSON.stringify(text);
+    }
+
+    function resetConversation() {
+      conversation = [];
+      messagesEl.innerHTML = "";
+      welcome.style.display = "block";
+    }
+
+    modelSelect.addEventListener("change", () => {
+      const key = modelSelect.value;
+      setModelMeta(key);
+      resetConversation();
+      generator = null;
+      loadedModelKey = null;
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const raw = promptField.value.trim();
+      if (!raw || busy) return;
+
+      busy = true;
+      sendButton.disabled = true;
+      promptField.value = "";
+
+      addMessage("user", raw);
+      conversation.push({ role: "user", content: raw });
+
+      const assistantBubble = addMessage("assistant", "Generating…");
+
+      try {
+        const key = modelSelect.value;
+        const reply = await getReply(raw, key);
+        assistantBubble.textContent = reply;
+        conversation.push({ role: "assistant", content: reply });
+      } catch (error) {
+        console.error(error);
+        assistantBubble.textContent = "The model could not generate a response on this browser/device. Try FAST mode, reload the page, or use a newer browser.";
+        assistantBubble.classList.add("error");
+      } finally {
+        busy = false;
+        sendButton.disabled = false;
+        promptField.focus();
+      }
+    });
+
+    promptField.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    setModelMeta(modelSelect.value);
+    checkBrowserSupport();
+  </script>
+</body>
+</html>
